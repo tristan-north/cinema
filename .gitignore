@@ -1,0 +1,12 @@
+*.obj
+
+*.o
+*~
+*.dds
+*.dll
+Makefile*
+*.manifest
+*.exe
+*.exp
+*.lib
+*.mtl
