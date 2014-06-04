@@ -17,7 +17,7 @@ LIBS += -lwinspool -lgdi32 -luser32 -lkernel32 -lwinmm -lcomdlg32 -ladvapi32 -ls
 
 # FFmpeg libs
 LIBS += -L../../ffmpeg-20140528-git-bbc10a1-win32-dev/lib/
-LIBS += -lavformat -lavcodec -lavutil -lswscale
+LIBS += -lavformat -lavcodec -lavutil -lswscale -lswresample
 
 #QMAKE_CXXFLAGS += /FS # Prevents a compiler error.
 #QMAKE_LFLAGS += /ENTRY:"mainCRTStartup"  # Entry point is main not WinMain

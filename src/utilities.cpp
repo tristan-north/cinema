@@ -217,10 +217,10 @@ void initializeTextures(string texDir, size_t screenTexWidth, size_t screenTexHe
 	glGenTextures(1, &screen.texture);
 	glBindTexture(GL_TEXTURE_2D, screen.texture);
 
-	unsigned char *pixels = (unsigned char*)malloc(screenTexWidth*screenTexHeight*3);
-	memset(pixels, 0x00, screenTexWidth*screenTexHeight*3);
+	unsigned char *pixels = (unsigned char*)malloc(screenTexWidth*screenTexHeight*4);
+	memset(pixels, 0x00, screenTexWidth*screenTexHeight*4);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, screenTexWidth, screenTexHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, screenTexWidth, screenTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 //	glTexStorage2D(GL_TEXTURE_2D, 2, GL_RGB, res, res);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

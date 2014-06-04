@@ -20,7 +20,7 @@ const bool l_FullScreen = false;
 const bool l_MultiSampling = false;
 
 // Externs
-bool running = true;
+bool g_running = true;
 GLuint program = 0;
 GLint p_matrix_ufm = 0;
 GLint mv_matrix_ufm = 0;
@@ -32,16 +32,19 @@ bool pollEvent()
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{
-			switch (event.type) {
-			case SDL_QUIT:
-					return false;
-			case SDL_KEYDOWN:
-					switch (event.key.keysym.sym) {
-					case SDLK_ESCAPE:
-							return false;
-					}
-					break;
+		switch (event.type) {
+		case SDL_QUIT:
+			return false;
+		case SDL_KEYDOWN:
+			switch (event.key.keysym.sym) {
+			case SDLK_ESCAPE:
+				return false;
 			}
+			break;
+		case FF_REFRESH_EVENT:
+			video_refresh_timer(event.user.data1);
+			break;;
+		}
 	}
 
 	return true;
@@ -58,14 +61,11 @@ int main(int argc, char *argv[])
 		videoFilePath = string(argv[1]);
 	}
 
-	// Open and validate video file.
-	if( videoInitialize(videoFilePath.c_str()) < 0 )
-		return -1;
-
 	// Get path of assets dir.
 	string assetsDir = argv[0];
 	assetsDir.erase(assetsDir.find_last_of('\\')+1);
 
+	_putenv("SDL_AUDIODRIVER=DirectSound");  // Use DirectSound
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
 
 	// Rift init.
@@ -90,13 +90,18 @@ int main(int argc, char *argv[])
 	if (l_FullScreen == true) {
 			x = l_HmdDesc.WindowsPos.x;
 			y = l_HmdDesc.WindowsPos.y;
-			windowFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+			windowFlags |= SDL_WINDOW_FULLSCREEN;
 	}
+
+
+	// Open and validate video file.
+	if( video_initialize(videoFilePath.c_str()) < 0 )
+		return -1;
 
 	ovrSizei l_ClientSize;
 	l_ClientSize.w = l_HmdDesc.Resolution.w; // 1280 for DK1...
 	l_ClientSize.h = l_HmdDesc.Resolution.h; // 800 for DK1...
-	SDL_Window *window = SDL_CreateWindow("Oculus Rift SDL2 OpenGL Demo", x, y, l_ClientSize.w, l_ClientSize.h, windowFlags);
+	SDL_Window *window = SDL_CreateWindow("Cinema", x, y, l_ClientSize.w, l_ClientSize.h, windowFlags);
 
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 
@@ -191,7 +196,7 @@ int main(int argc, char *argv[])
 
 
 	initializeGeo(assetsDir);
-	initializeTextures(assetsDir, videoGetWidth(), videoGetHeight());
+	initializeTextures(assetsDir, video_get_width(), video_get_height());
 
 	GLuint program = initializeProgram();
 
@@ -201,9 +206,9 @@ int main(int argc, char *argv[])
 	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_DEPTH_TEST);
 	glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
-	while (running)
+	while (g_running)
 	{
-		running = pollEvent();
+		g_running = pollEvent();
 
 		double startTime = ovr_GetTimeInSeconds(); UNREFERENCED_PARAMETER(startTime);
 
@@ -247,12 +252,13 @@ int main(int argc, char *argv[])
 			glBindTexture(GL_TEXTURE_2D, room.texture);
 			glDrawArrays(GL_TRIANGLES, 0, room.numTriangles*3);
 
-			// Get new frame of video and setup screen texture.
+			// Get new frame of video
 			glBindTexture(GL_TEXTURE_2D, screen.texture);
-//			if(videoGetFramePixels(videoPixels)) {
-//				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, videoGetWidth(), videoGetHeight(),
-//								GL_RGB, GL_UNSIGNED_BYTE, videoPixels);
-//			}
+			unsigned char *videoPixels = video_get_frame_pixels();
+			if(videoPixels) {
+				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_get_width(), video_get_height(),
+								GL_RGBA, GL_UNSIGNED_BYTE, videoPixels);
+			}
 
 			// Render screen
 			glBindVertexArray(screen.vao);
@@ -265,6 +271,7 @@ int main(int argc, char *argv[])
 
 			ovrHmd_EndEyeRender(l_Hmd, l_Eye, l_EyePose, &l_EyeTexture[l_Eye].Texture);
 		}
+//		glFinish();
 //		printf("%.2f ms\n", (ovr_GetTimeInSeconds() - startTime)*1000);
 
 		// Unbind the FBO, back to normal drawing...
@@ -278,6 +285,7 @@ int main(int argc, char *argv[])
 
 	}
 
+	video_shutdown();
 	SDL_GL_DeleteContext(context);
 	SDL_DestroyWindow(window);
 

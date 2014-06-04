@@ -1,14 +1,15 @@
 #ifndef VIDEO_H
 #define VIDEO_H
 
-#include <string>
+#define FF_REFRESH_EVENT (SDL_USEREVENT)
 
-int videoInitialize(const char *filepath);
-// Copies frame pixel data into *pixels which needs to be
-// videoGetWidth() * videoGetHeight() * 3 bytes big.
-// Returns 0 if finished reading video, otherise 1.
-int videoGetFramePixels(unsigned char *pixels);
-int videoGetWidth();
-int videoGetHeight();
+int video_initialize(const char *filepath);
+
+unsigned char *video_get_frame_pixels();
+void video_refresh_timer(void *userdata);
+
+int video_get_width();
+int video_get_height();
+void video_shutdown();
 
 #endif // VIDEO_H
