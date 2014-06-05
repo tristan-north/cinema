@@ -1,7 +1,8 @@
 /*
 
 
-  - Check that the video displaying system works ok. Don't ignore when video_display is called.
+  - At the moment it's displaying the video image on the picture queue rather than
+	the image last passed to video_display. Don't ignore when video_display is called.
   - Try and get the flash video file audio to work ok.
   - Instead of down sampling audio to 44100 Hz, try up sampling to 48000.
   - Account for different aspect ratio videos.

@@ -16,7 +16,7 @@
 
 using namespace std;
 
-const bool l_FullScreen = false;
+const bool l_FullScreen = true;
 const bool l_MultiSampling = false;
 
 // Externs
@@ -205,19 +205,25 @@ int main(int argc, char *argv[])
 	// Render loop
 	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_DEPTH_TEST);
-	glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
 	while (g_running)
 	{
 		g_running = pollEvent();
 
-		double startTime = ovr_GetTimeInSeconds(); UNREFERENCED_PARAMETER(startTime);
-
 		ovrFrameTiming m_HmdFrameTiming = ovrHmd_BeginFrame(l_Hmd, 0); UNREFERENCED_PARAMETER(m_HmdFrameTiming);
 
-		// Bind the FBO...
+		// Bind the FBO
 		glBindFramebuffer(GL_FRAMEBUFFER, l_FBOId);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		// Get new frame of video
+		glBindTexture(GL_TEXTURE_2D, screen.texture);
+		unsigned char *videoPixels = video_get_frame_pixels();
+		if(videoPixels) {
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_get_width(), video_get_height(),
+							GL_RGBA, GL_UNSIGNED_BYTE, videoPixels);
+		}
+
+		// Render each eye to texture
 		for (int l_EyeIndex=0; l_EyeIndex<ovrEye_Count; l_EyeIndex++)
 		{
 			ovrEyeType l_Eye = l_HmdDesc.EyeRenderOrder[l_EyeIndex];
@@ -226,7 +232,7 @@ int main(int argc, char *argv[])
 			glViewport(l_EyeTexture[l_Eye].OGL.Header.RenderViewport.Pos.x,      // StartX
 					   l_EyeTexture[l_Eye].OGL.Header.RenderViewport.Pos.y,      // StartY
 					   l_EyeTexture[l_Eye].OGL.Header.RenderViewport.Size.w,     // Width
-					   l_EyeTexture[l_Eye].OGL.Header.RenderViewport.Size.h);      // Height
+					   l_EyeTexture[l_Eye].OGL.Header.RenderViewport.Size.h);    // Height
 
 			// Get Projection and ModelView matrici from the device...
 			OVR::Matrix4f l_ProjectionMatrix = ovrMatrix4f_Projection(
@@ -252,16 +258,9 @@ int main(int argc, char *argv[])
 			glBindTexture(GL_TEXTURE_2D, room.texture);
 			glDrawArrays(GL_TRIANGLES, 0, room.numTriangles*3);
 
-			// Get new frame of video
-			glBindTexture(GL_TEXTURE_2D, screen.texture);
-			unsigned char *videoPixels = video_get_frame_pixels();
-			if(videoPixels) {
-				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_get_width(), video_get_height(),
-								GL_RGBA, GL_UNSIGNED_BYTE, videoPixels);
-			}
-
 			// Render screen
 			glBindVertexArray(screen.vao);
+			glBindTexture(GL_TEXTURE_2D, screen.texture);
 			glDrawArrays(GL_TRIANGLES, 0, screen.numTriangles*3);
 
 			// Cleanup
@@ -272,7 +271,7 @@ int main(int argc, char *argv[])
 			ovrHmd_EndEyeRender(l_Hmd, l_Eye, l_EyePose, &l_EyeTexture[l_Eye].Texture);
 		}
 //		glFinish();
-//		printf("%.2f ms\n", (ovr_GetTimeInSeconds() - startTime)*1000);
+//		printf("%.2f ms\n", (ovr_GetTimeInSeconds() - m_HmdFrameTiming.ThisFrameSeconds)*1000);
 
 		// Unbind the FBO, back to normal drawing...
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
