@@ -41,7 +41,7 @@ extern "C" {
 #define SAMPLE_CORRECTION_PERCENT_MAX 10
 #define AUDIO_DIFF_AVG_NB 20
 
-#define VIDEO_PICTURE_QUEUE_SIZE 1
+#define VIDEO_PICTURE_QUEUE_SIZE 2
 
 #define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
 
@@ -130,6 +130,7 @@ enum {
 
 SDL_Window     *window;
 SDL_Renderer   *renderer;
+unsigned char  *pixelBuffer;
 
 extern bool g_running;
 
@@ -427,6 +428,11 @@ long audio_tutorial_resample(VideoState *is, struct AVFrame *inframe) {
 }
 
 int audio_decode_frame(VideoState *is, double *pts_ptr) {
+	// If have already decoded all the frames in the stream, just return.
+	static long frameCounter = 0;
+	if( frameCounter >= is->audio_st->nb_frames ) return -1;
+
+
 	/* For example with wma audio package size can be
 	   like 100 000 bytes */
 	long len1, data_size = 0;
@@ -441,6 +447,7 @@ int audio_decode_frame(VideoState *is, double *pts_ptr) {
 		while(is->audio_pkt_size > 0) {
 			int got_frame = 0;
 			len1 = avcodec_decode_audio4(is->audio_st->codec, &is->audio_frame, &got_frame, pkt);
+			frameCounter++;
 
 			if(len1 < 0) {
 				/* if error, skip frame */
@@ -574,6 +581,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
 		stream += len1;
 		is->audio_buf_index += len1;
 	}
+
 }
 
 static Uint32 sdl_refresh_timer_cb(Uint32 /*interval*/, void *opaque) {
@@ -589,25 +597,9 @@ static void schedule_refresh(VideoState *is, int delay) {
 	SDL_AddTimer(delay, sdl_refresh_timer_cb, is);
 }
 
-void video_display(VideoState *is) {
 
-	VideoPicture *vp;
-
-	vp = &is->pictq[is->pictq_rindex];
-	if(vp->bmp) {
-/*
-		// Print time between new frames displayed.
-		static uint64_t lastTime = programStartTimeMs;
-		uint64_t currentTime = av_gettime()/1000;
-		printf("Present time: %lld ms  (%lld ms since last present)\n", currentTime-programStartTimeMs, currentTime-lastTime);
-		lastTime = av_gettime()/1000;
-*/
-	}
-}
-
-
-// This does some sync-ing stuff, calls video_display() which
-// actually presents the image, decrements the picture queue size
+// This does some sync-ing stuff, copies the image into pixelBuffer,
+// decrements the picture queue size
 // and lets queue_picture() know that there's a free spot in the queue.
 //
 // This gets called in the main thread after an FF_REFRESH_EVENT.
@@ -666,10 +658,12 @@ void video_refresh_timer(void *userdata) {
 				actual_delay = 0.010;
 			}
 
-			schedule_refresh(is, (int)(actual_delay * 1000 + 0.5));
-
+			// Since the callback tends to happen a bit later than requested,
+			// add a 5ms fudge factor.
+			const int fudge = -5;
+			schedule_refresh(is, (int)(actual_delay * 1000 + 0.5 + fudge));
 			/* show the picture! */
-			video_display(is);
+			memcpy(pixelBuffer, is->pictq[is->pictq_rindex].bmp, vp->width* vp->height*4);
 
 			/* update queue for next picture! */
 			if(++is->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE) {
@@ -691,30 +685,23 @@ void alloc_picture(VideoState *is) {
 
 	VideoPicture *vp;
 
-	vp = &is->pictq[is->pictq_windex];
+	for(size_t i = 0; i < VIDEO_PICTURE_QUEUE_SIZE; i++) {
+		vp = &is->pictq[i];
+		vp->width = is->video_st->codec->width;
+		vp->height = is->video_st->codec->height;
+		vp->bmp = (unsigned char*)malloc(vp->width * vp->height * 4);
+		vp->allocated = 1;
+	}
 
-//	vp->bmp = SDL_CreateTexture(renderer,
-//								   SDL_PIXELFORMAT_BGR888,
-//								   SDL_TEXTUREACCESS_STREAMING,
-//								   is->video_st->codec->width, is->video_st->codec->height);
-	vp->width = is->video_st->codec->width;
-	vp->height = is->video_st->codec->height;
-
-	vp->bmp = (unsigned char*)malloc(vp->width * vp->height * 4);
-
-	SDL_LockMutex(is->pictq_mutex);
-	vp->allocated = 1;
-	SDL_CondSignal(is->pictq_cond);
-	SDL_UnlockMutex(is->pictq_mutex);
+	pixelBuffer = (unsigned char*)malloc(vp->width * vp->height * 4);
 }
 
 
 // This waits until the picture queue isn't full then
-// copies the video frame into the texture (vp->bmp).
+// copies the video frame into the texture.
 // It somehow lets the display thread know that there is
 // a picture ready via is->pictq_windex.
 int queue_picture(VideoState *is, AVFrame *pFrame, double pts) {
-
 	VideoPicture *vp;
 	AVPicture pict;
 
@@ -731,50 +718,32 @@ int queue_picture(VideoState *is, AVFrame *pFrame, double pts) {
 	// windex vidState set to 0 initially
 	vp = &is->pictq[is->pictq_windex];
 
-	/* allocate or resize the buffer! */
-	if(!vp->bmp) {
-
-		/* wait until we have a picture allocated */
-		SDL_LockMutex(is->pictq_mutex);
-		while(!vp->allocated && g_running) {
-			SDL_CondWait(is->pictq_cond, is->pictq_mutex);
-		}
-		SDL_UnlockMutex(is->pictq_mutex);
-		if(!g_running) {
-			return -1;
-		}
-	}
 	/* We have a place to put our picture on the queue */
 	/* If we are skipping a frame, do we set this to null
 	 but still return vp->allocated = 1? */
 
 
-	if(vp->bmp) {
-		// Get frame pixels into pict.data
-		int w = is->video_st->codec->width;
-		int h = is->video_st->codec->height;
+	// Get frame pixels into pict.data
+	int w = is->video_st->codec->width;
+	int h = is->video_st->codec->height;
 
-//		int64_t startTime = av_gettime();
+	avpicture_fill(&pict, vp->bmp, AV_PIX_FMT_BGRA, w, h);
 
-		avpicture_fill(&pict, vp->bmp, AV_PIX_FMT_BGRA, w, h);
+	sws_scale(is->sws_ctx, (const uint8_t * const *)pFrame->data,
+			  pFrame->linesize, 0, h,
+			  pict.data, pict.linesize);
 
-		sws_scale(is->sws_ctx, (const uint8_t * const *)pFrame->data,
-				  pFrame->linesize, 0, h,
-				  pict.data, pict.linesize);
-
-//		printf("%ld ms\n", av_gettime()/1000 - startTime/1000);
-
-		vp->pts = pts;
+	vp->pts = pts;
 
 
-		// now we inform our display thread that we have a pic ready
-		if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
-			is->pictq_windex = 0;
-		}
-		SDL_LockMutex(is->pictq_mutex);
-		is->pictq_size++;
-		SDL_UnlockMutex(is->pictq_mutex);
+	// now we inform our display thread that we have a pic ready
+	if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
+		is->pictq_windex = 0;
 	}
+	SDL_LockMutex(is->pictq_mutex);
+	is->pictq_size++;
+	SDL_UnlockMutex(is->pictq_mutex);
+
 	return 0;
 }
 
@@ -848,7 +817,8 @@ int video_thread(void *arg) {
 			pts = double(*(uint64_t *)pFrame->opaque);
 
 		} else if(packet->dts != AV_NOPTS_VALUE) {
-			pts = double(packet->dts);
+//			pts = double(packet->dts);
+			pts = double(av_frame_get_best_effort_timestamp(pFrame));
 
 		} else {
 			pts = 0;
@@ -867,7 +837,6 @@ int video_thread(void *arg) {
 
 		av_free_packet(packet);
 	}
-
 	av_free(pFrame);
 	return 0;
 }
@@ -932,6 +901,7 @@ int stream_component_open(VideoState *is, int stream_index) {
 
 			memset(&is->audio_pkt, 0, sizeof(is->audio_pkt));
 			packet_queue_init(&is->audioq);
+
 			SDL_PauseAudio(0);
 			break;
 
@@ -960,6 +930,7 @@ int stream_component_open(VideoState *is, int stream_index) {
 					NULL
 				);
 			codecCtx->get_buffer2 = our_get_buffer;
+
 			break;
 
 		default:
@@ -1003,10 +974,6 @@ int decode_thread(void *arg) {
 
 		if(av_read_frame(is->pFormatCtx, packet) < 0) {
 			if(is->pFormatCtx->pb->error == 0) {
-				SDL_Delay(100); /* no error; wait for user input */
-				continue;
-
-			} else {
 				break;
 			}
 		}
@@ -1023,10 +990,7 @@ int decode_thread(void *arg) {
 		}
 	}
 
-	/* all done - wait for it */
-	while(g_running) {
-		SDL_Delay(100);
-	}
+	printf("Decode thread finished.\n");
 
 	return 0;
 }
@@ -1194,10 +1158,8 @@ int video_initialize(const char *filepath) {
 
 
 unsigned char * video_get_frame_pixels() {
-	VideoPicture *vp = &global_video_state->pictq[global_video_state->pictq_rindex];
-
-	if(vp->bmp)
-		return vp->bmp;
+	if(pixelBuffer)
+		return pixelBuffer;
 	else
 		return 0;
 }
@@ -1217,6 +1179,12 @@ int video_get_height() {
 
 void video_shutdown()
 {
+	VideoPicture *vp;
+	for(size_t i = 0; i < VIDEO_PICTURE_QUEUE_SIZE; i++) {
+		vp = &global_video_state->pictq[i];
+		free(vp->bmp);
+	}
+
 	SDL_CondSignal(global_video_state->audioq.cond);
 	SDL_CondSignal(global_video_state->videoq.cond);
 }

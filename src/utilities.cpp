@@ -116,7 +116,7 @@ GLuint initializeProgram()
 	return program;
 }
 
-void initializeGeo(string geoDir)
+void initializeGeo(string geoDir, int videoWidth, int videoHeight)
 {
 	// Load the room .obj file.
 	GLfloat* verts;
@@ -133,13 +133,19 @@ void initializeGeo(string geoDir)
 	delete[] uvs;
 
 	// Create the screen geo.
-	GLfloat screenVerts[] = {-2.4f, 2.658f, -2.412f,
-							 -2.4f, 0.658f, -2.412f,
-							  2.4f, 0.658f, -2.412f,
+	float screenHeightOffGround = 0.658f;
+	float screenHeight = 2.0f;
+	float screenHalfWidth = float(videoWidth) / float(videoHeight) * screenHeight / 2;
+	screenHalfWidth = (screenHalfWidth > 2.4f) ? 2.4f : screenHalfWidth;
+	screenHalfWidth = (screenHalfWidth < 0.1f) ? 0.1f : screenHalfWidth;
 
-							 -2.4f, 2.658f, -2.412f,
-							  2.4f, 0.658f, -2.412f,
-							  2.4f, 2.658f, -2.412f};
+	GLfloat screenVerts[] = {-screenHalfWidth, screenHeightOffGround + screenHeight, -2.412f,
+							 -screenHalfWidth, screenHeightOffGround,                -2.412f,
+							  screenHalfWidth, screenHeightOffGround,                -2.412f,
+
+							 -screenHalfWidth, screenHeightOffGround + screenHeight, -2.412f,
+							  screenHalfWidth, screenHeightOffGround,                -2.412f,
+							  screenHalfWidth, screenHeightOffGround + screenHeight, -2.412f};
 
 	GLfloat screenNormals[] = {0.0f, 0.0f, 1.0f,
 							   0.0f, 0.0f, 1.0f,
@@ -243,8 +249,8 @@ string pickVideo()
 	// use the contents of szFile to initialize itself.
 	ofn.lpstrFile[0] = '\0';
 	ofn.nMaxFile = sizeof(szFile);
-	ofn.lpstrFilter = "Video File (*.mkv, *.avi, *.mp4, *.mpeg, *.wmv, *.flv)\0*"
-			".MKV;*.AVI;*.MP4;*.MPEG;*.WMV;*.FLV\0All\0*.*\0";
+	ofn.lpstrFilter = "Video File (*.mkv, *.avi, *.mp4, *.mpeg, *.wmv, *.mov, *.flv)\0*"
+			".MKV;*.AVI;*.MP4;*.MPEG;*.WMV;*.FLV;*.MOV\0All\0*.*\0";
 	ofn.nFilterIndex = 1;
 	ofn.lpstrInitialDir = NULL;
 	ofn.lpstrTitle = "Select Video File";

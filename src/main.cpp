@@ -1,7 +1,3 @@
-// GLFWOculusRiftTest
-// (c) cThrough 2014 (Daniel Dekkers)
-// Version 2014052302 Based on OculusSDK 3.0.2 Preview
-
 #include <Windows.h>
 #include <GL/glew.h>
 #include <OVR.h>
@@ -16,8 +12,9 @@
 
 using namespace std;
 
-const bool l_FullScreen = true;
-const bool l_MultiSampling = false;
+const bool VSYNC = true;
+const bool FULLSCREEN = false;
+const float MULTISAMPLE = 2.0f;  // Texture pixels per display pixel.
 
 // Externs
 bool g_running = true;
@@ -87,7 +84,7 @@ int main(int argc, char *argv[])
 	int y = SDL_WINDOWPOS_CENTERED;
 	Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
 
-	if (l_FullScreen == true) {
+	if (FULLSCREEN == true) {
 			x = l_HmdDesc.WindowsPos.x;
 			y = l_HmdDesc.WindowsPos.y;
 			windowFlags |= SDL_WINDOW_FULLSCREEN;
@@ -114,8 +111,8 @@ int main(int argc, char *argv[])
 	}
 
 	// We will do some offscreen rendering, setup FBO...
-	ovrSizei l_TextureSizeLeft = ovrHmd_GetFovTextureSize(l_Hmd, ovrEye_Left, l_HmdDesc.DefaultEyeFov[0], 1.0f);
-	ovrSizei l_TextureSizeRight = ovrHmd_GetFovTextureSize(l_Hmd, ovrEye_Right, l_HmdDesc.DefaultEyeFov[1], 1.0f);
+	ovrSizei l_TextureSizeLeft = ovrHmd_GetFovTextureSize(l_Hmd, ovrEye_Left, l_HmdDesc.DefaultEyeFov[0], MULTISAMPLE);
+	ovrSizei l_TextureSizeRight = ovrHmd_GetFovTextureSize(l_Hmd, ovrEye_Right, l_HmdDesc.DefaultEyeFov[1], MULTISAMPLE);
 	ovrSizei l_TextureSize;
 	l_TextureSize.w = l_TextureSizeLeft.w + l_TextureSizeRight.w;
 	l_TextureSize.h = (l_TextureSizeLeft.h>l_TextureSizeRight.h ? l_TextureSizeLeft.h : l_TextureSizeRight.h);
@@ -172,13 +169,14 @@ int main(int argc, char *argv[])
 	SDL_GetWindowWMInfo(window, &info);
 
 	l_Cfg.OGL.Header.API = ovrRenderAPI_OpenGL;
-	l_Cfg.OGL.Header.Multisample = (l_MultiSampling ? 1 : 0);
+	l_Cfg.OGL.Header.Multisample = 0;
 	l_Cfg.OGL.Header.RTSize.w = l_ClientSize.w;
 	l_Cfg.OGL.Header.RTSize.h = l_ClientSize.h;
 	l_Cfg.OGL.Window = info.info.win.window;
 
 	int l_DistortionCaps = ovrDistortionCap_Chromatic | ovrDistortionCap_TimeWarp;
 	ovrHmd_ConfigureRendering(l_Hmd, &l_Cfg.Config, l_DistortionCaps, l_EyeFov, l_EyeRenderDesc);
+	if( !VSYNC )ovrHmd_SetEnabledCaps(l_Hmd, ovrHmdCap_NoVSync);
 
 	ovrGLTexture l_EyeTexture[2];
 	l_EyeTexture[0].OGL.Header.API = ovrRenderAPI_OpenGL;
@@ -195,7 +193,7 @@ int main(int argc, char *argv[])
 	l_EyeTexture[1].OGL.Header.RenderViewport.Pos.x = (l_TextureSize.w+1)/2;
 
 
-	initializeGeo(assetsDir);
+	initializeGeo(assetsDir, video_get_width(), video_get_height());
 	initializeTextures(assetsDir, video_get_width(), video_get_height());
 
 	GLuint program = initializeProgram();
@@ -221,6 +219,7 @@ int main(int argc, char *argv[])
 		if(videoPixels) {
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_get_width(), video_get_height(),
 							GL_RGBA, GL_UNSIGNED_BYTE, videoPixels);
+
 		}
 
 		// Render each eye to texture
@@ -270,8 +269,6 @@ int main(int argc, char *argv[])
 
 			ovrHmd_EndEyeRender(l_Hmd, l_Eye, l_EyePose, &l_EyeTexture[l_Eye].Texture);
 		}
-//		glFinish();
-//		printf("%.2f ms\n", (ovr_GetTimeInSeconds() - m_HmdFrameTiming.ThisFrameSeconds)*1000);
 
 		// Unbind the FBO, back to normal drawing...
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -282,6 +279,12 @@ int main(int argc, char *argv[])
 		glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind GL_ARRAY_BUFFER for our own vertex arrays to work...
 		glUseProgram(0); // Oculus shader is still active, turn it off...
 
+		// Check for missed frames
+		static double lastFrameTime = 0;
+		if(ovr_GetTimeInSeconds() - lastFrameTime > 0.018)
+			printf("Missed a frame? %.2f ms from end of last frame to end of this frame.\n",
+				   (ovr_GetTimeInSeconds() - lastFrameTime)*1000);
+		lastFrameTime = ovr_GetTimeInSeconds();
 	}
 
 	video_shutdown();

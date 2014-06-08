@@ -1,18 +1,17 @@
 /*
 
 
-  - At the moment it's displaying the video image on the picture queue rather than
-	the image last passed to video_display. Don't ignore when video_display is called.
   - Try and get the flash video file audio to work ok.
   - Instead of down sampling audio to 44100 Hz, try up sampling to 48000.
-  - Account for different aspect ratio videos.
   - Support more than 2 audio channels. At the moment always resampling the audio to 2 channel.
 
 
  - Use RGB matte (and A?) in screen lightmask maps.
  - Have a "Please press space to start video." Texture initially on the screen.
- - If video finishes, update the screen texture with a black texture, otherwise it just holds on the last frame.
- - If audio finishes playing it repeats the last chunk, play silence instead.
+ - Try mipmapping the screen texture.
+ - Figure out best way to do multisampling.
+   There's a post about it here https://developer.oculusvr.com/forums/viewtopic.php?f=20&t=8680#p117684
+
 
 
 OpenGL resources:

@@ -14,7 +14,7 @@ struct objRenderData {
 GLuint createShader(GLenum eShaderType, const std::string &strShaderFile);
 GLuint createProgram(const std::vector<GLuint> &shaderList);
 GLuint initializeProgram();
-void initializeGeo(std::string geoDir);
+void initializeGeo(std::string geoDir, int videoWidth, int videoHeight);
 void createVAO(objRenderData &renderData, GLfloat *verts, GLfloat *normals, GLfloat *uvs);
 void initializeTextures(std::string texDir, size_t screenTexWidth, size_t screenTexHeight);
 std::string pickVideo();
