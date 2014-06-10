@@ -366,15 +366,15 @@ long audio_tutorial_resample(VideoState *is, struct AVFrame *inframe) {
 #if __LIBAVRESAMPLE__
 		is->resample_size = av_rescale_rnd(avresample_get_delay(is->pSwrCtx) +
 										   inframe->nb_samples,
-										   44100,
-										   44100,
+										   is->audio_st->codec->sample_rate,
+										   is->audio_st->codec->sample_rate,
 										   AV_ROUND_UP);
 #else
 		is->resample_size = av_rescale_rnd(swr_get_delay(is->pSwrCtx,
-										   44100) +
+										   is->audio_st->codec->sample_rate) +
 										   inframe->nb_samples,
-										   44100,
-										   44100,
+										   is->audio_st->codec->sample_rate,
+										   is->audio_st->codec->sample_rate,
 										   AV_ROUND_UP);
 #endif
 
@@ -428,10 +428,8 @@ long audio_tutorial_resample(VideoState *is, struct AVFrame *inframe) {
 }
 
 int audio_decode_frame(VideoState *is, double *pts_ptr) {
-	// If have already decoded all the frames in the stream, just return.
-	static long frameCounter = 0;
-	if( frameCounter >= is->audio_st->nb_frames ) return -1;
-
+	static bool finishedStream = false;
+	if ( finishedStream ) return -1;
 
 	/* For example with wma audio package size can be
 	   like 100 000 bytes */
@@ -447,7 +445,6 @@ int audio_decode_frame(VideoState *is, double *pts_ptr) {
 		while(is->audio_pkt_size > 0) {
 			int got_frame = 0;
 			len1 = avcodec_decode_audio4(is->audio_st->codec, &is->audio_frame, &got_frame, pkt);
-			frameCounter++;
 
 			if(len1 < 0) {
 				/* if error, skip frame */
@@ -533,6 +530,10 @@ int audio_decode_frame(VideoState *is, double *pts_ptr) {
 		if(packet_queue_get(&is->audioq, pkt, 1) < 0) {
 			return -1;
 		}
+		if( pkt->duration == 0 ) {
+			finishedStream = true;
+			return -1;
+		}
 
 		is->audio_pkt_data = pkt->data;
 		is->audio_pkt_size = pkt->size;
@@ -560,7 +561,6 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
 				/* If error, output silence */
 				is->audio_buf_size = 1024;
 				memset(is->audio_buf, 0, is->audio_buf_size);
-
 			} else {
 				audio_size = synchronize_audio(is, (int16_t *)is->audio_buf,
 											   audio_size, pts);
@@ -863,7 +863,7 @@ int stream_component_open(VideoState *is, int stream_index) {
 
 	if(codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
 		// Set audio settings from codec info
-		wanted_spec.freq = 44100; // Resampling to this
+		wanted_spec.freq = codecCtx->sample_rate; // Resampling to this
 		wanted_spec.format = AUDIO_S16SYS;
 		wanted_spec.channels = 2;  // Resampling to this
 		wanted_spec.silence = 0;
@@ -974,6 +974,10 @@ int decode_thread(void *arg) {
 
 		if(av_read_frame(is->pFormatCtx, packet) < 0) {
 			if(is->pFormatCtx->pb->error == 0) {
+				// If end of stream, put packet with duration 0 on the audio queue
+				// to signal EOF to packet decode function.
+				packet->duration = 0;
+				packet_queue_put(&is->audioq, packet);
 				break;
 			}
 		}
@@ -1050,7 +1054,9 @@ int video_initialize(const char *filepath) {
 	}
 
 	// Dump information about file onto standard error
+	fprintf(stderr, "===============================================================================\n");
 	av_dump_format(pFormatCtx, 0, is->filename, 0);
+	fprintf(stderr, "===============================================================================\n");
 
 	// Find the first video and audio stream
 	for(i = 0; i < int(pFormatCtx->nb_streams); i++) {
@@ -1121,9 +1127,10 @@ int video_initialize(const char *filepath) {
 		av_opt_set_int(is->pSwrCtx, "in_sample_rate",
 					   pFormatCtx->streams[audio_index]->codec->sample_rate, 0);
 
+		printf("channel layout: %d\n", pFormatCtx->streams[audio_index]->codec->channel_layout);
 		av_opt_set_int(is->pSwrCtx, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
 		av_opt_set_int(is->pSwrCtx, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
-		av_opt_set_int(is->pSwrCtx, "out_sample_rate", 44100, 0);
+		av_opt_set_int(is->pSwrCtx, "out_sample_rate",  pFormatCtx->streams[audio_index]->codec->sample_rate, 0);
 
 #ifdef __LIBAVRESAMPLE__
 
@@ -1135,7 +1142,7 @@ int video_initialize(const char *filepath) {
 			fprintf(stderr, " ERROR!! From Samplert: %d Hz Sample format: %s\n",
 					pFormatCtx->streams[audio_index]->codec->sample_rate,
 					av_get_sample_fmt_name(pFormatCtx->streams[audio_index]->codec->sample_fmt));
-			fprintf(stderr, "         To 44100 Sample format: s16\n");
+			fprintf(stderr, "         To Sample format: s16\n");
 			is->audio_need_resample = 0;
 			is->pSwrCtx = NULL;;
 		}

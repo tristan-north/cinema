@@ -2,7 +2,6 @@
 
 
   - Try and get the flash video file audio to work ok.
-  - Instead of down sampling audio to 44100 Hz, try up sampling to 48000.
   - Support more than 2 audio channels. At the moment always resampling the audio to 2 channel.
 
 
@@ -11,6 +10,7 @@
  - Try mipmapping the screen texture.
  - Figure out best way to do multisampling.
    There's a post about it here https://developer.oculusvr.com/forums/viewtopic.php?f=20&t=8680#p117684
+ - Only copy video frame to openGL texture when necessary, rather than every openGL refresh.
 
 
 
